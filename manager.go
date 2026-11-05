@@ -37,15 +37,19 @@ func (m *Manager) Create(ctx context.Context, userID int64) (Session, error) {
 		ExpiresAt: now.Add(m.ttl),
 	}
 
-	if err := m.store.Put(ctx, session); err != nil {
+	stored := session
+	stored.Token = hashToken(session.Token)
+
+	if err := m.store.Put(ctx, stored); err != nil {
 		return Session{}, fmt.Errorf("failed to put session: %w", err)
 	}
 
+	session.Token = token
 	return session, nil
 }
 
 func (m *Manager) Get(ctx context.Context, token string) (Session, error) {
-	session, err := m.store.Get(ctx, token)
+	session, err := m.store.Get(ctx, hashToken(token))
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return Session{}, ErrNotFound
@@ -68,6 +72,7 @@ func (m *Manager) GetUser(ctx context.Context, userID int64) ([]Session, error) 
 	active := make([]Session, 0, len(sessions))
 	for _, s := range sessions {
 		if !s.Expired(now) {
+			s.Token = ""
 			active = append(active, s)
 		}
 	}
@@ -75,7 +80,7 @@ func (m *Manager) GetUser(ctx context.Context, userID int64) ([]Session, error) 
 }
 
 func (m *Manager) Revoke(ctx context.Context, token string) error {
-	return m.store.Delete(ctx, token)
+	return m.store.Delete(ctx, hashToken(token))
 }
 
 func (m *Manager) RevokeUser(ctx context.Context, userID int64) error {
